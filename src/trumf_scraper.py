@@ -92,33 +92,13 @@ def parse_price_line(line: str) -> tuple[str, str | None]:
 def scrape_meny() -> Iterable[Offer]:
     page = fetch("https://kundeavis.meny.no/")
     soup = BeautifulSoup(page.text, "html.parser")
-
-    candidate_attrs = ("href", "src", "data-src", "data-href")
-    pdf_url = None
-    for tag in soup.find_all(True):
-        for attr in candidate_attrs:
-            value = tag.get(attr)
-            if not value:
-                continue
-            if ".pdf" in value.lower():
                 pdf_url = urljoin(page.url, value)
                 break
         if pdf_url:
             break
 
     if not pdf_url:
-        # Fallback: search for embedded URLs inside inline scripts or JSON
-        # blobs. Some deployments reference the PDF via configuration objects
-        # instead of DOM elements, so we attempt a raw regex lookup.
-        match = re.search(r"https?://[^\s'\"<>]+\.pdf(?:\?[^'\"<>]*)?", page.text)
-        if match:
-            pdf_url = match.group(0)
-        else:
-            match = re.search(r"['\"]([^'\"]+\.pdf(?:\?[^'\"]*)?)['\"]", page.text)
-            if match:
-                pdf_url = urljoin(page.url, match.group(1))
-
-    if not pdf_url:
+      main
         raise ScraperError("Fant ikke PDF-lenken på Meny-siden.")
 
     pdf_response = fetch(pdf_url)
@@ -187,20 +167,6 @@ def scrape_etilbudsavis(store_slug: str, store_name: str) -> Iterable[Offer]:
     return _extract_etilbudsavis_offers(response.text, store_name)
 
 
-def scrape_spar() -> Iterable[Offer]:
-    errors: List[str] = []
-    for slug in ("Spar", "Meny"):
-        try:
-            offers = list(scrape_etilbudsavis(slug, "Spar"))
-            if offers:
-                return offers
-        except Exception as exc:  # pragma: no cover - defensive logging
-            errors.append(f"{slug}: {exc}")
-    if errors:
-        raise ScraperError("; ".join(errors))
-    return []
-
-
 def scrape_norli() -> Iterable[Offer]:
     response = fetch("https://www.norli.no/kampanje/tilbud")
     soup = BeautifulSoup(response.text, "html.parser")
@@ -253,7 +219,7 @@ def scrape_mester_gronn() -> Iterable[Offer]:
 
 SCRAPERS = [
     scrape_meny,
-    scrape_spar,
+
     lambda: scrape_etilbudsavis("KIWI", "Kiwi"),
     lambda: scrape_etilbudsavis("Joker", "Joker"),
     scrape_norli,
