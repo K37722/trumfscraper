@@ -92,18 +92,13 @@ def parse_price_line(line: str) -> tuple[str, str | None]:
 def scrape_meny() -> Iterable[Offer]:
     page = fetch("https://kundeavis.meny.no/")
     soup = BeautifulSoup(page.text, "html.parser")
-
-    pdf_url = None
-    for tag in soup.find_all(["a", "iframe", "embed", "source"]):
-        for attr in ("href", "src"):
-            value = tag.get(attr)
-            if value and value.lower().endswith(".pdf"):
                 pdf_url = urljoin(page.url, value)
                 break
         if pdf_url:
             break
 
     if not pdf_url:
+      main
         raise ScraperError("Fant ikke PDF-lenken på Meny-siden.")
 
     pdf_response = fetch(pdf_url)
@@ -224,7 +219,7 @@ def scrape_mester_gronn() -> Iterable[Offer]:
 
 SCRAPERS = [
     scrape_meny,
-    lambda: scrape_etilbudsavis("Meny", "Spar"),
+
     lambda: scrape_etilbudsavis("KIWI", "Kiwi"),
     lambda: scrape_etilbudsavis("Joker", "Joker"),
     scrape_norli,
