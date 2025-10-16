@@ -27,10 +27,11 @@ location.
 """
 from __future__ import annotations
 
+import argparse
 import csv
+import html
 import json
 import re
-import argparse
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -132,34 +133,126 @@ def scrape_meny() -> Iterable[Offer]:
     soup = BeautifulSoup(page.text, "html.parser")
 
     pdf_url = None
+    attempt_log: List[str] = []
+
+    def _normalise_candidate(candidate: str) -> str:
+        cleaned = candidate.strip().strip("\"'")
+        cleaned = cleaned.replace("\\/", "/")
+        cleaned = re.sub(r"\\u002f", "/", cleaned, flags=re.I)
+        cleaned = html.unescape(cleaned)
+        return cleaned
+
+    def _load_json_from_script(script: BeautifulSoup) -> object | None:
+        if not script:
+            return None
+        raw = script.string or script.text
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
 
     data_tag = soup.find("script", id="__NEXT_DATA__")
-    script_text = data_tag.get_text(strip=True) if data_tag else None
-    if script_text:
-        try:
-            data = json.loads(script_text)
-        except json.JSONDecodeError:
-            data = None
-        if data is not None:
+    primary_data = _load_json_from_script(data_tag)
+    if primary_data is not None:
+        found = _find_pdf_in_data(primary_data)
+        if found:
+            pdf_url = urljoin(page.url, found)
+            attempt_log.append("fant PDF via __NEXT_DATA__")
+        else:
+            attempt_log.append("__NEXT_DATA__ manglet PDF-lenke")
+    else:
+        attempt_log.append("fant ikke __NEXT_DATA__-script")
+
+    if not pdf_url:
+        for script in soup.find_all("script"):
+            data = _load_json_from_script(script)
+            if data is None:
+                continue
             found = _find_pdf_in_data(data)
             if found:
                 pdf_url = urljoin(page.url, found)
+                attempt_log.append("fant PDF via annen <script>-tag")
+                break
+        else:
+            attempt_log.append("fant ingen PDF i <script>-tagger")
 
     if not pdf_url:
         pdf_url = _find_pdf_in_attrs(soup, page.url)
+        if pdf_url:
+            attempt_log.append("fant PDF i HTML-attributter")
+        else:
+            attempt_log.append("ingen PDF i HTML-attributter")
 
     if not pdf_url:
-        absolute_match = re.search(r"https?://[^'\"\s]+\.pdf", page.text, flags=re.I)
-        if absolute_match:
-            pdf_url = absolute_match.group(0)
+        text_variants = [page.text]
+        try:
+            text_variants.append(bytes(page.text, "utf-8").decode("unicode_escape"))
+        except UnicodeDecodeError:
+            pass
+        for text in text_variants:
+            absolute_match = re.search(
+                r"https?://[^\s'\"<>]+\.pdf(?:\?[^\s'\"<>]+)?",
+                text,
+                flags=re.I,
+            )
+            if absolute_match:
+                pdf_url = _normalise_candidate(absolute_match.group(0))
+                attempt_log.append("fant PDF via absolutt regex-søk")
+                break
+        else:
+            attempt_log.append("absolutt regex-søk ga ingen treff")
 
     if not pdf_url:
-        relative_match = re.search(r"[\'\"]([^'\"\s]+\.pdf)[\'\"]", page.text, flags=re.I)
+        relative_match = re.search(
+            r"(?P<quote>['\"])(?P<url>[^'\"<>]+\.pdf(?:\?[^'\"<>]+)?)(?P=quote)",
+            page.text,
+            flags=re.I,
+        )
         if relative_match:
-            pdf_url = urljoin(page.url, relative_match.group(1))
+            pdf_url = _normalise_candidate(relative_match.group("url"))
+            attempt_log.append("fant PDF via relativ regex-søk")
+        else:
+            attempt_log.append("fant ingen relativ PDF-lenke")
+
+    fallback_api_endpoints = [
+        "https://kundeavis.meny.no/api/catalog/latest",
+        "https://kundeavis.meny.no/api/catalogue/latest",
+        "https://kundeavis.meny.no/api/catalog/current",
+        "https://kundeavis.meny.no/api/catalogue/current",
+    ]
 
     if not pdf_url:
-        raise ScraperError("Fant ikke PDF-lenken på Meny-siden.")
+        for endpoint in fallback_api_endpoints:
+            try:
+                response = fetch(endpoint)
+            except Exception as exc:  # pragma: no cover - network failure logging
+                attempt_log.append(f"klarte ikke {endpoint}: {exc}")
+                continue
+            try:
+                data = response.json()
+            except ValueError as exc:  # pragma: no cover - unexpected payload
+                attempt_log.append(f"{endpoint} returnerte ikke JSON: {exc}")
+                continue
+            found = _find_pdf_in_data(data)
+            if found:
+                pdf_url = urljoin(response.url, found)
+                attempt_log.append(f"fant PDF via fallback-endepunkt {endpoint}")
+                break
+        else:
+            attempt_log.append("fallback-endepunkter ga ingen PDF")
+
+    if pdf_url and not pdf_url.lower().startswith("http"):
+        pdf_url = urljoin(page.url, pdf_url)
+
+    if pdf_url:
+        print(f"Meny: bruker PDF {pdf_url}")
+    else:
+        attempt_summary = "\n  - ".join(attempt_log) if attempt_log else "ingen forsøk logget"
+        raise ScraperError(
+            "Fant ikke PDF-lenken på Meny-siden. Prøvde:\n  - " + attempt_summary
+        )
 
     pdf_response = fetch(pdf_url)
     pdf_text = extract_text(BytesIO(pdf_response.content))
