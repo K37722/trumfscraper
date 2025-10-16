@@ -30,6 +30,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+import argparse
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -133,9 +134,10 @@ def scrape_meny() -> Iterable[Offer]:
     pdf_url = None
 
     data_tag = soup.find("script", id="__NEXT_DATA__")
-    if data_tag and data_tag.string:
+    script_text = data_tag.get_text(strip=True) if data_tag else None
+    if script_text:
         try:
-            data = json.loads(data_tag.string)
+            data = json.loads(script_text)
         except json.JSONDecodeError:
             data = None
         if data is not None:
@@ -145,6 +147,16 @@ def scrape_meny() -> Iterable[Offer]:
 
     if not pdf_url:
         pdf_url = _find_pdf_in_attrs(soup, page.url)
+
+    if not pdf_url:
+        absolute_match = re.search(r"https?://[^'\"\s]+\.pdf", page.text, flags=re.I)
+        if absolute_match:
+            pdf_url = absolute_match.group(0)
+
+    if not pdf_url:
+        relative_match = re.search(r"[\'\"]([^'\"\s]+\.pdf)[\'\"]", page.text, flags=re.I)
+        if relative_match:
+            pdf_url = urljoin(page.url, relative_match.group(1))
 
     if not pdf_url:
         raise ScraperError("Fant ikke PDF-lenken på Meny-siden.")
@@ -285,6 +297,32 @@ def collect_offers() -> List[Offer]:
     return offers
 
 
+def load_sample_offers() -> List[Offer]:
+    """Returnerer forhåndslagrede tilbud fra ``fixtures/sample_offers.json``."""
+
+    fixtures_dir = Path(__file__).resolve().parent.parent / "fixtures"
+    sample_file = fixtures_dir / "sample_offers.json"
+    if not sample_file.exists():
+        raise FileNotFoundError(
+            "Fant ikke sample_offers.json. Har du slettet fixtures-katalogen?"
+        )
+
+    with sample_file.open(encoding="utf-8") as handle:
+        raw_offers = json.load(handle)
+
+    offers: List[Offer] = []
+    for item in raw_offers:
+        offers.append(
+            Offer(
+                store=item.get("store", "Ukjent"),
+                title=item["title"],
+                price=item.get("price"),
+                extra=item.get("extra"),
+            )
+        )
+    return offers
+
+
 def write_csv(rows: Iterable[Offer], output_path: Path) -> None:
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -293,8 +331,19 @@ def write_csv(rows: Iterable[Offer], output_path: Path) -> None:
             writer.writerow(offer.as_row())
 
 
-def main() -> None:
-    offers = collect_offers()
+def main(argv: List[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Scraper Trumf-tilbud.")
+    parser.add_argument(
+        "--use-sample-data",
+        action="store_true",
+        help="Generer CSV med forhåndslagrede eksempeldata i stedet for å hente fra nett.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.use_sample_data:
+        offers = load_sample_offers()
+    else:
+        offers = collect_offers()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     output_path = Path("data") / f"trumf-tilbud-{timestamp}.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)

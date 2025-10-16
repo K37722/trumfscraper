@@ -24,6 +24,16 @@ inn både PDF-baserte kundeaviser (Meny) og HTML-baserte butikksider
    Programmet lagrer en fil som heter `data/trumf-tilbud-YYYYMMDD-HHMMSS.csv`
    med kolonnene `butikk`, `tittel`, `pris` og `ekstrainfo`.
 
+   Dersom du jobber i et miljø uten nettilgang (for eksempel i enkelte CI-
+   systemer), kan du generere en CSV basert på forhåndslagrede eksempeldata:
+
+   ```bash
+   python3 -m src.trumf_scraper --use-sample-data
+   ```
+
+   Det brukes da dataene som ligger i `fixtures/sample_offers.json`, slik at
+   du fortsatt kan verifisere at scriptet kjører og at CSV-genereringen virker.
+
 ## Struktur
 
 - `src/trumf_scraper.py` – hovedscriptet som inneholder alt av

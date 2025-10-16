@@ -1,0 +1,20 @@
+[
+  {
+    "store": "Meny",
+    "title": "Fersk torskefilet",
+    "price": "119,00 kr",
+    "extra": "Per 400 g pakke"
+  },
+  {
+    "store": "Kiwi",
+    "title": "Bananer",
+    "price": "19,90 kr",
+    "extra": "Pr. kg"
+  },
+  {
+    "store": "Norli",
+    "title": "Strikkeboka 2",
+    "price": "249,00 kr",
+    "extra": "Spar 100 kr"
+  }
+]
