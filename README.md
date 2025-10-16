@@ -1,0 +1,2 @@
+# trumf-scraper
+# trumfsale-scraper
