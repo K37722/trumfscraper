@@ -89,16 +89,64 @@ def parse_price_line(line: str) -> tuple[str, str | None]:
     return line.strip(), None
 
 
+def _find_pdf_in_data(data: object) -> str | None:
+    """Recursively search a JSON-like structure for a PDF URL."""
+
+    if isinstance(data, str):
+        if ".pdf" in data.lower():
+            return data
+        return None
+    if isinstance(data, dict):
+        for value in data.values():
+            found = _find_pdf_in_data(value)
+            if found:
+                return found
+    elif isinstance(data, (list, tuple, set)):
+        for item in data:
+            found = _find_pdf_in_data(item)
+            if found:
+                return found
+    return None
+
+
+def _find_pdf_in_attrs(soup: BeautifulSoup, base_url: str) -> str | None:
+    """Search HTML attributes for a PDF link and return an absolute URL."""
+
+    for tag in soup.find_all(True):
+        for value in tag.attrs.values():
+            candidates: Iterable[str]
+            if isinstance(value, (list, tuple, set)):
+                candidates = (str(item) for item in value)
+            else:
+                candidates = (str(value),)
+            for candidate in candidates:
+                if ".pdf" not in candidate.lower():
+                    continue
+                return urljoin(base_url, candidate)
+    return None
+
+
 def scrape_meny() -> Iterable[Offer]:
     page = fetch("https://kundeavis.meny.no/")
     soup = BeautifulSoup(page.text, "html.parser")
-                pdf_url = urljoin(page.url, value)
-                break
-        if pdf_url:
-            break
+
+    pdf_url = None
+
+    data_tag = soup.find("script", id="__NEXT_DATA__")
+    if data_tag and data_tag.string:
+        try:
+            data = json.loads(data_tag.string)
+        except json.JSONDecodeError:
+            data = None
+        if data is not None:
+            found = _find_pdf_in_data(data)
+            if found:
+                pdf_url = urljoin(page.url, found)
 
     if not pdf_url:
-      main
+        pdf_url = _find_pdf_in_attrs(soup, page.url)
+
+    if not pdf_url:
         raise ScraperError("Fant ikke PDF-lenken på Meny-siden.")
 
     pdf_response = fetch(pdf_url)
@@ -219,7 +267,7 @@ def scrape_mester_gronn() -> Iterable[Offer]:
 
 SCRAPERS = [
     scrape_meny,
-
+    lambda: scrape_etilbudsavis("Spar", "Spar"),
     lambda: scrape_etilbudsavis("KIWI", "Kiwi"),
     lambda: scrape_etilbudsavis("Joker", "Joker"),
     scrape_norli,
