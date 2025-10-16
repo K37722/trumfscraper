@@ -10,7 +10,7 @@ inn både PDF-baserte kundeaviser (Meny) og HTML-baserte butikksider
 1. Opprett et virtuelt miljø (anbefalt) og installer avhengigheter:
 
    ```bash
-   python -m venv .venv
+   python3 -m venv .venv
    source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
    pip install -r requirements.txt
    ```
@@ -18,7 +18,7 @@ inn både PDF-baserte kundeaviser (Meny) og HTML-baserte butikksider
 2. Kjør scrapteren fra prosjektroten:
 
    ```bash
-   python -m src.trumf_scraper
+   python3 -m src.trumf_scraper
    ```
 
    Programmet lagrer en fil som heter `data/trumf-tilbud-YYYYMMDD-HHMMSS.csv`
