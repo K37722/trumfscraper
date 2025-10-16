@@ -133,25 +133,53 @@ def scrape_meny() -> Iterable[Offer]:
 
     pdf_url = None
 
-    data_tag = soup.find("script", id="__NEXT_DATA__")
-    script_text = data_tag.get_text(strip=True) if data_tag else None
-    if script_text:
+    def _load_json_from_script(script: BeautifulSoup) -> object | None:
+        if not script:
+            return None
+        raw = script.string or script.text
+        if not raw:
+            return None
         try:
-            data = json.loads(script_text)
+            return json.loads(raw)
         except json.JSONDecodeError:
-            data = None
-        if data is not None:
+            return None
+
+    data_tag = soup.find("script", id="__NEXT_DATA__")
+    primary_data = _load_json_from_script(data_tag)
+    if primary_data is not None:
+        found = _find_pdf_in_data(primary_data)
+        if found:
+            pdf_url = urljoin(page.url, found)
+
+    if not pdf_url:
+        for script in soup.find_all("script"):
+            data = _load_json_from_script(script)
+            if data is None:
+                continue
             found = _find_pdf_in_data(data)
             if found:
                 pdf_url = urljoin(page.url, found)
+                break
 
     if not pdf_url:
         pdf_url = _find_pdf_in_attrs(soup, page.url)
 
     if not pdf_url:
-        absolute_match = re.search(r"https?://[^'\"\s]+\.pdf", page.text, flags=re.I)
-        if absolute_match:
-            pdf_url = absolute_match.group(0)
+        text_variants = [page.text]
+        try:
+            text_variants.append(bytes(page.text, "utf-8").decode("unicode_escape"))
+        except UnicodeDecodeError:
+            pass
+        for text in text_variants:
+            absolute_match = re.search(r"https?:\\?/?\\?/?[^'\"\s]+\.pdf", text, flags=re.I)
+            if absolute_match:
+                candidate = absolute_match.group(0).replace("\\/", "/")
+                candidate = re.sub(r"\\u002f", "/", candidate, flags=re.I)
+                pdf_url = candidate
+                break
+
+    if pdf_url and not pdf_url.lower().startswith("http"):
+        pdf_url = urljoin(page.url, pdf_url)
 
     if not pdf_url:
         relative_match = re.search(r"[\'\"]([^'\"\s]+\.pdf)[\'\"]", page.text, flags=re.I)
